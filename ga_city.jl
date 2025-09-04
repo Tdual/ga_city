@@ -20,8 +20,10 @@ Base.@kwdef mutable struct GameConfig
     w_service::Float64   = -0.6   # 住宅→サービス 平均距離
     w_park::Float64      =  0.8   # 公園比率（高いほど良い→正）
     w_road_connect::Float64 = -2.0  # 道路非接続ペナルティ（施設1つあたり）
+    w_road_network::Float64 = 5.0   # 道路ネットワーク連結ボーナス（正値）
     penalty_hw::Float64  = -50.0  # 職場が無い/住宅が無い時のペナルティ
     penalty_hs::Float64  = -20.0  # サービスが無い/住宅が無い時のペナルティ
+    penalty_disconnect::Float64 = -10.0  # 道路の非連結ペナルティ（孤立道路グループ1つあたり）
     popsize::Int         = 80
     generations::Int     = 100
     show_trace::Bool     = false
@@ -74,6 +76,76 @@ function is_road_connected(grid::Matrix{Int}, i::Int, j::Int)
         connected = true
     end
     return connected
+end
+
+# 道路ネットワークの連結成分数を計算（Union-Find）
+function count_road_components(grid::Matrix{Int}, start_h::Int, start_w::Int, sample_h::Int, sample_w::Int)
+    # Union-Find構造の初期化
+    parent = Dict{Tuple{Int,Int}, Tuple{Int,Int}}()
+    
+    # Find操作（経路圧縮付き）
+    function find_root(node::Tuple{Int,Int})
+        if !haskey(parent, node)
+            parent[node] = node
+            return node
+        end
+        if parent[node] != node
+            parent[node] = find_root(parent[node])
+        end
+        return parent[node]
+    end
+    
+    # Union操作
+    function union(a::Tuple{Int,Int}, b::Tuple{Int,Int})
+        root_a = find_root(a)
+        root_b = find_root(b)
+        if root_a != root_b
+            parent[root_a] = root_b
+        end
+    end
+    
+    # サンプル領域内の道路を収集
+    roads = Tuple{Int,Int}[]
+    for i in start_h:(start_h + sample_h - 1)
+        for j in start_w:(start_w + sample_w - 1)
+            if grid[i, j] == 1  # 道路
+                push!(roads, (i, j))
+            end
+        end
+    end
+    
+    # 隣接する道路をUnion
+    for road in roads
+        i, j = road
+        # 上
+        if i > start_h && grid[i-1, j] == 1
+            union(road, (i-1, j))
+        end
+        # 下
+        if i < start_h + sample_h - 1 && grid[i+1, j] == 1
+            union(road, (i+1, j))
+        end
+        # 左
+        if j > start_w && grid[i, j-1] == 1
+            union(road, (i, j-1))
+        end
+        # 右
+        if j < start_w + sample_w - 1 && grid[i, j+1] == 1
+            union(road, (i, j+1))
+        end
+    end
+    
+    # 連結成分数を数える
+    if isempty(roads)
+        return 0  # 道路がない場合
+    end
+    
+    components = Set{Tuple{Int,Int}}()
+    for road in roads
+        push!(components, find_root(road))
+    end
+    
+    return length(components)
 end
 
 # ===== 適応度（大きいほど良い） - サンプリング版 =====
@@ -149,6 +221,18 @@ function fitness_city(x::AbstractVector{<:Real})
     
     # 道路接続性ペナルティ
     score += g.w_road_connect * unconnected_facilities
+    
+    # 道路ネットワーク連結性の評価
+    road_components = count_road_components(grid, start_h, start_w, sample_h, sample_w)
+    if road_components > 0
+        # 理想は1つの連結成分（すべての道路が繋がっている）
+        # 連結成分が増えるほどペナルティ
+        score += g.penalty_disconnect * (road_components - 1)
+        # 連結している場合はボーナス
+        if road_components == 1
+            score += g.w_road_network
+        end
+    end
     
     return score
 end
@@ -248,29 +332,35 @@ end
 function menu()
     println("=== Genetic City 設定 ($(H)×$(W)グリッド) ===")
     println("プリセットを選択:")
-    println(" 1) バランス型      (通勤-1.0, サービス-0.6, 公園+0.8, 道路-2.0)")
-    println(" 2) 職住近接重視    (通勤-1.6, サービス-0.4, 公園+0.4, 道路-2.0)")
-    println(" 3) 緑化重視        (通勤-0.6, サービス-0.4, 公園+1.4, 道路-1.5)")
-    println(" 4) サービス重視    (通勤-0.8, サービス-1.4, 公園+0.4, 道路-2.0)")
+    println(" 1) バランス型      (通勤-1.0, サービス-0.6, 公園+0.8, 道路接続-2.0, 連結+5.0)")
+    println(" 2) 職住近接重視    (通勤-1.6, サービス-0.4, 公園+0.4, 道路接続-2.0, 連結+5.0)")
+    println(" 3) 緑化重視        (通勤-0.6, サービス-0.4, 公園+1.4, 道路接続-1.5, 連結+3.0)")
+    println(" 4) サービス重視    (通勤-0.8, サービス-1.4, 公園+0.4, 道路接続-2.0, 連結+5.0)")
     println(" 5) カスタム設定")
     print("選択 [1–5] (Enter=1): ")
     choice = strip(readline(stdin; keep=true))
     choice = isempty(choice) ? "1" : choice
 
     if choice == "1"
-        CFG.w_commute = -1.0; CFG.w_service = -0.6; CFG.w_park = 0.8; CFG.w_road_connect = -2.0
+        CFG.w_commute = -1.0; CFG.w_service = -0.6; CFG.w_park = 0.8
+        CFG.w_road_connect = -2.0; CFG.w_road_network = 5.0; CFG.penalty_disconnect = -10.0
     elseif choice == "2"
-        CFG.w_commute = -1.6; CFG.w_service = -0.4; CFG.w_park = 0.4; CFG.w_road_connect = -2.0
+        CFG.w_commute = -1.6; CFG.w_service = -0.4; CFG.w_park = 0.4
+        CFG.w_road_connect = -2.0; CFG.w_road_network = 5.0; CFG.penalty_disconnect = -10.0
     elseif choice == "3"
-        CFG.w_commute = -0.6; CFG.w_service = -0.4; CFG.w_park = 1.4; CFG.w_road_connect = -1.5
+        CFG.w_commute = -0.6; CFG.w_service = -0.4; CFG.w_park = 1.4
+        CFG.w_road_connect = -1.5; CFG.w_road_network = 3.0; CFG.penalty_disconnect = -8.0
     elseif choice == "4"
-        CFG.w_commute = -0.8; CFG.w_service = -1.4; CFG.w_park = 0.4; CFG.w_road_connect = -2.0
+        CFG.w_commute = -0.8; CFG.w_service = -1.4; CFG.w_park = 0.4
+        CFG.w_road_connect = -2.0; CFG.w_road_network = 5.0; CFG.penalty_disconnect = -10.0
     else
-        println("\n--- カスタム重み ---（負=距離短いほど良い/ペナルティ, 正=比率多いほど良い）")
+        println("\n--- カスタム重み ---（負=ペナルティ, 正=ボーナス）")
         CFG.w_commute = readnum("通勤距離の重み (負値)", CFG.w_commute)
         CFG.w_service = readnum("サービス距離の重み (負値)", CFG.w_service)
         CFG.w_park    = readnum("公園比率の重み (正値)", CFG.w_park)
         CFG.w_road_connect = readnum("道路非接続ペナルティ (負値)", CFG.w_road_connect)
+        CFG.w_road_network = readnum("道路連結ボーナス (正値)", CFG.w_road_network)
+        CFG.penalty_disconnect = readnum("道路非連結ペナルティ (負値)", CFG.penalty_disconnect)
     end
 
     println("\n--- 進化パラメータ ---")
@@ -292,6 +382,7 @@ function menu()
     println("\n設定OK：")
     println("  w_commute=", CFG.w_commute, "  w_service=", CFG.w_service)
     println("  w_park=", CFG.w_park, "  w_road_connect=", CFG.w_road_connect)
+    println("  w_road_network=", CFG.w_road_network, "  penalty_disconnect=", CFG.penalty_disconnect)
     println("  popsize=", CFG.popsize, "  generations=", CFG.generations)
     println("  selection=", CFG.sel_name, "  crossover=", CFG.cx_name, "  mutation=", CFG.mut_name)
     println("=========================================\n")
