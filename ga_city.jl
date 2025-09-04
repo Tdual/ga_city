@@ -6,7 +6,7 @@ using Statistics
 using Evolutionary
 
 # モジュールを読み込み
-include("modules.jl")
+include("src/modules.jl")
 
 """
 メイン処理

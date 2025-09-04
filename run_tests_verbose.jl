@@ -5,7 +5,7 @@ using Test
 using Random
 using Statistics
 
-include("modules.jl")
+include("src/modules.jl")
 
 println("🧪 テスト開始...\n")
 
