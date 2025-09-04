@@ -12,7 +12,7 @@ const H = 1000
 const W = 1000
 const N = H * W               # 遺伝子長（セル数）
 const TYPES = 0:4             # 0=公園,1=道路,2=住宅,3=職場,4=サービス
-SYMBOL = Dict(0=>'.', 1=>'=', 2=>'H', 3=>'W', 4=>'S')
+SYMBOL = Dict(0=>"🌳", 1=>"🛣️", 2=>"🏠", 3=>"🏢", 4=>"🏪")  # 絵文字表示（文字列として）
 
 # ===== コンフィグ =====
 Base.@kwdef mutable struct GameConfig
@@ -230,6 +230,8 @@ function print_city_sample(x::AbstractVector{<:Real}, size::Int=20)
     start_w = div(W - size, 2)
     
     println("都市の一部を表示 ($(size)×$(size), 位置: [$(start_h):$(start_h+size-1), $(start_w):$(start_w+size-1)])")
+    println("🌳=公園 🛣️=道路 🏠=住宅 🏢=職場 🏪=サービス")
+    println("─" ^ 40)
     for i in start_h:(start_h + size - 1)
         @inbounds println(join((SYMBOL[grid[i,j]] for j in start_w:(start_w + size - 1))))
     end
