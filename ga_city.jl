@@ -148,6 +148,101 @@ function count_road_components(grid::Matrix{Int}, start_h::Int, start_w::Int, sa
     return length(components)
 end
 
+# ===== 道路連結性を保証する初期化 =====
+function create_connected_road_network()
+    # ランダムな初期配置
+    x = rand(N) .* 4.0
+    grid = to_grid_from_vec(x)
+    
+    # すべての道路を収集
+    roads = Tuple{Int,Int}[]
+    for i in 1:H
+        for j in 1:W
+            if grid[i, j] == 1
+                push!(roads, (i, j))
+            end
+        end
+    end
+    
+    # 道路がない場合はランダムに配置
+    if isempty(roads)
+        # 最小限の道路網を作成（グリッド状に配置）
+        for i in 1:3:H
+            for j in 1:W
+                grid[i, j] = 1
+            end
+        end
+        for j in 1:3:W
+            for i in 1:H
+                grid[i, j] = 1
+            end
+        end
+    else
+        # 既存の道路を連結する
+        # スパニングツリーアルゴリズムで最小限の道路を追加
+        visited = Set{Tuple{Int,Int}}()
+        to_visit = [roads[1]]
+        
+        while !isempty(to_visit)
+            current = pop!(to_visit)
+            push!(visited, current)
+            i, j = current
+            
+            # 隣接セルをチェック
+            neighbors = [(i-1,j), (i+1,j), (i,j-1), (i,j+1)]
+            for (ni, nj) in neighbors
+                if 1 <= ni <= H && 1 <= nj <= W
+                    if grid[ni, nj] == 1 && (ni, nj) ∉ visited
+                        push!(to_visit, (ni, nj))
+                    end
+                end
+            end
+        end
+        
+        # 未訪問の道路がある場合は連結する
+        unconnected = setdiff(roads, visited)
+        for road in unconnected
+            # 最も近い接続済み道路への経路を作成
+            min_dist = typemax(Int)
+            closest = roads[1]
+            for connected in visited
+                dist = manhattan(CartesianIndex(road...), CartesianIndex(connected...))
+                if dist < min_dist
+                    min_dist = dist
+                    closest = connected
+                end
+            end
+            
+            # 道路で連結
+            i1, j1 = road
+            i2, j2 = closest
+            # 横方向に連結
+            if i1 == i2
+                for j in min(j1,j2):max(j1,j2)
+                    grid[i1, j] = 1
+                end
+            # 縦方向に連結
+            elseif j1 == j2
+                for i in min(i1,i2):max(i1,i2)
+                    grid[i, j1] = 1
+                end
+            else
+                # L字型に連結
+                for j in min(j1,j2):max(j1,j2)
+                    grid[i1, j] = 1
+                end
+                for i in min(i1,i2):max(i1,i2)
+                    grid[i, j2] = 1
+                end
+            end
+            push!(visited, road)
+        end
+    end
+    
+    # グリッドをベクトルに戻す
+    return vec(Float64.(grid))
+end
+
 # ===== 適応度（大きいほど良い） - サンプリング版 =====
 function fitness_city(x::AbstractVector{<:Real})
     g = CFG
@@ -225,11 +320,12 @@ function fitness_city(x::AbstractVector{<:Real})
     road_components = count_road_components(grid, start_h, start_w, sample_h, sample_w)
     if road_components > 0
         # 理想は1つの連結成分（すべての道路が繋がっている）
-        # 連結成分が増えるほどペナルティ
-        score += g.penalty_disconnect * (road_components - 1)
-        # 連結している場合はボーナス
         if road_components == 1
-            score += g.w_road_network
+            # 完全に連結している場合は大きなボーナス
+            score += g.w_road_network * 10.0  # 10倍のボーナス
+        else
+            # 連結成分が増えるほど極端なペナルティ
+            score += g.penalty_disconnect * (road_components - 1) * 10.0  # 10倍のペナルティ
         end
     end
     
@@ -276,6 +372,112 @@ function resolve_mutation(name::String)
     end
 end
 
+# ===== 連結性を維持する修復関数 =====
+function repair_connectivity!(x::AbstractVector{<:Real})
+    grid = to_grid_from_vec(x)
+    
+    # 道路の連結成分数をチェック
+    components = count_road_components(grid, 1, 1, H, W)
+    
+    if components > 1
+        # 複数の連結成分がある場合は連結する
+        # すべての道路を収集
+        roads = Tuple{Int,Int}[]
+        for i in 1:H
+            for j in 1:W
+                if grid[i, j] == 1
+                    push!(roads, (i, j))
+                end
+            end
+        end
+        
+        if !isempty(roads)
+            # BFSで最大の連結成分を見つける
+            visited = Set{Tuple{Int,Int}}()
+            max_component = Set{Tuple{Int,Int}}()
+            
+            for road in roads
+                if road ∉ visited
+                    component = Set{Tuple{Int,Int}}()
+                    to_visit = [road]
+                    
+                    while !isempty(to_visit)
+                        current = pop!(to_visit)
+                        if current ∈ visited
+                            continue
+                        end
+                        push!(visited, current)
+                        push!(component, current)
+                        
+                        i, j = current
+                        neighbors = [(i-1,j), (i+1,j), (i,j-1), (i,j+1)]
+                        for (ni, nj) in neighbors
+                            if 1 <= ni <= H && 1 <= nj <= W && grid[ni, nj] == 1 && (ni, nj) ∉ visited
+                                push!(to_visit, (ni, nj))
+                            end
+                        end
+                    end
+                    
+                    if length(component) > length(max_component)
+                        max_component = component
+                    end
+                end
+            end
+            
+            # 小さい連結成分を最大の連結成分に接続
+            for road in roads
+                if road ∉ max_component
+                    # 最も近い主要道路を見つける
+                    min_dist = typemax(Int)
+                    closest = first(max_component)
+                    for main_road in max_component
+                        dist = manhattan(CartesianIndex(road...), CartesianIndex(main_road...))
+                        if dist < min_dist
+                            min_dist = dist
+                            closest = main_road
+                        end
+                    end
+                    
+                    # 道路で連結（既存の施設を保護）
+                    i1, j1 = road
+                    i2, j2 = closest
+                    if i1 == i2
+                        for j in min(j1,j2)+1:max(j1,j2)-1
+                            if grid[i1, j] == 0  # 公園のみ道路に変換
+                                grid[i1, j] = 1
+                            end
+                        end
+                    elseif j1 == j2
+                        for i in min(i1,i2)+1:max(i1,i2)-1
+                            if grid[i, j1] == 0  # 公園のみ道路に変換
+                                grid[i, j1] = 1
+                            end
+                        end
+                    else
+                        # L字型に連結
+                        for j in min(j1,j2):max(j1,j2)
+                            if grid[i1, j] == 0  # 公園のみ道路に変換
+                                grid[i1, j] = 1
+                            end
+                        end
+                        for i in min(i1,i2):max(i1,i2)
+                            if grid[i, j2] == 0  # 公園のみ道路に変換
+                                grid[i, j2] = 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    # 修復したグリッドをベクトルに戻す
+    for i in 1:N
+        x[i] = Float64(grid[i])
+    end
+    return x
+end
+
 # ===== 進化の実行 =====
 function run_ga()
     g = CFG
@@ -283,7 +485,8 @@ function run_ga()
     lower = fill(0.0, N); upper = fill(4.0, N)
     cnst  = Evolutionary.BoxConstraints(lower, upper)
 
-    x0 = rand(N) .* 4.0
+    # 連結した道路網で初期化
+    x0 = create_connected_road_network()
 
     alg = Evolutionary.GA(
         populationSize = g.popsize,
@@ -400,6 +603,14 @@ function main()
     
     best_x, best_f = run_ga()
     println("\nBest fitness: ", round(best_f, digits=3))
+    
+    # 道路連結性の検証
+    grid = reshape(Int.(round.(best_x)), H, W)
+    n_components = count_road_components(grid, 1, 1, H, W)
+    total_roads = sum(grid .== 1)
+    println("道路連結状態: ", n_components == 1 ? "✅ 100%連結" : "❌ $(n_components)個の分離成分")
+    println("道路総数: ", total_roads)
+    
     println("\nBest city layout:")
     print_city_sample(best_x, 30)  # 100x100なので30x30を表示
 end
