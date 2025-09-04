@@ -8,8 +8,8 @@ using Evolutionary
 Random.seed!(42)
 
 # ===== 都市の設定 =====
-const H = 1000
-const W = 1000
+const H = 100
+const W = 100
 const N = H * W               # 遺伝子長（セル数）
 const TYPES = 0:4             # 0=公園,1=道路,2=住宅,3=職場,4=サービス
 SYMBOL = Dict(0=>"🌳", 1=>"🛣️", 2=>"🏠", 3=>"🏢", 4=>"🏪")  # 絵文字表示（文字列として）
@@ -153,12 +153,11 @@ function fitness_city(x::AbstractVector{<:Real})
     g = CFG
     grid = to_grid_from_vec(x)
     
-    # 1000x1000は大きすぎるのでランダムサンプリング
-    # サンプル領域を決める（例: 100x100の領域を評価）
-    sample_h = min(100, H)
-    sample_w = min(100, W)
-    start_h = rand(1:max(1, H - sample_h + 1))
-    start_w = rand(1:max(1, W - sample_w + 1))
+    # 全領域を評価（100x100なのでサンプリング不要）
+    sample_h = H
+    sample_w = W
+    start_h = 1
+    start_w = 1
     
     # サンプル領域内で評価
     homes = CartesianIndex{2}[]
@@ -309,11 +308,18 @@ end
 function print_city_sample(x::AbstractVector{<:Real}, size::Int=20)
     grid = to_grid_from_vec(x)
     
-    # 中央付近から表示
-    start_h = div(H - size, 2)
-    start_w = div(W - size, 2)
-    
-    println("都市の一部を表示 ($(size)×$(size), 位置: [$(start_h):$(start_h+size-1), $(start_w):$(start_w+size-1)])")
+    # 中央付近から表示（100x100の場合）
+    if size >= H || size >= W
+        # グリッドより大きいサイズを指定された場合は全体を表示
+        start_h = 1
+        start_w = 1
+        size = min(H, W)
+        println("都市全体を表示 ($(size)×$(size))")
+    else
+        start_h = div(H - size, 2)
+        start_w = div(W - size, 2)
+        println("都市の一部を表示 ($(size)×$(size), 位置: [$(start_h):$(start_h+size-1), $(start_w):$(start_w+size-1)])")
+    end
     println("🌳=公園 🛣️=道路 🏠=住宅 🏢=職場 🏪=サービス")
     println("─" ^ 40)
     for i in start_h:(start_h + size - 1)
@@ -364,8 +370,6 @@ function menu()
     end
 
     println("\n--- 進化パラメータ ---")
-    println("注意: 1000×1000グリッドは計算量が膨大なため、")
-    println("      評価時は100×100のサンプル領域で計算します。")
     CFG.popsize     = readnum("個体数", CFG.popsize)
     CFG.generations = readnum("世代数", CFG.generations)
     showt           = readnum("進行ログ表示 0/1", CFG.show_trace ? 1 : 0)
@@ -393,12 +397,11 @@ function main()
     menu()
     
     println("\n進化を開始します...")
-    println("(1000×1000グリッドの最適化には時間がかかります)")
     
     best_x, best_f = run_ga()
     println("\nBest fitness: ", round(best_f, digits=3))
-    println("\nBest city layout (中央部20×20のサンプル):")
-    print_city_sample(best_x, 20)
+    println("\nBest city layout:")
+    print_city_sample(best_x, 30)  # 100x100なので30x30を表示
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
