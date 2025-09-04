@@ -19,11 +19,11 @@ Base.@kwdef mutable struct GameConfig
     w_commute::Float64   = -1.0   # 住宅→職場 平均距離（短いほど良い→負）
     w_service::Float64   = -0.6   # 住宅→サービス 平均距離
     w_park::Float64      =  0.8   # 公園比率（高いほど良い→正）
-    w_road_connect::Float64 = -5.0  # 道路非接続ペナルティ（施設1つあたり）
-    w_road_network::Float64 = 20.0   # 道路ネットワーク連結ボーナス（正値）
+    w_road_connect::Float64 = -10.0  # 道路非接続ペナルティ（施設1つあたり）
+    w_road_network::Float64 = 100.0   # 道路ネットワーク連結ボーナス（正値）
     penalty_hw::Float64  = -50.0  # 職場が無い/住宅が無い時のペナルティ
     penalty_hs::Float64  = -20.0  # サービスが無い/住宅が無い時のペナルティ
-    penalty_disconnect::Float64 = -100.0  # 道路の非連結ペナルティ（孤立道路グループ1つあたり）
+    penalty_disconnect::Float64 = -1000.0  # 道路の非連結ペナルティ（孤立道路グループ1つあたり）
     popsize::Int         = 80
     generations::Int     = 100
     show_trace::Bool     = false
@@ -338,10 +338,10 @@ end
 function menu()
     println("=== Genetic City 設定 ($(H)×$(W)グリッド) ===")
     println("プリセットを選択:")
-    println(" 1) バランス型      (通勤-1.0, サービス-0.6, 公園+0.8, 道路接続-5.0, 連結+20.0)")
-    println(" 2) 職住近接重視    (通勤-1.6, サービス-0.4, 公園+0.4, 道路接続-5.0, 連結+20.0)")
-    println(" 3) 緑化重視        (通勤-0.6, サービス-0.4, 公園+1.4, 道路接続-3.0, 連結+15.0)")
-    println(" 4) サービス重視    (通勤-0.8, サービス-1.4, 公園+0.4, 道路接続-5.0, 連結+20.0)")
+    println(" 1) バランス型      (通勤-1.0, サービス-0.6, 公園+0.8, 道路接続-10.0, 連結+100.0)")
+    println(" 2) 職住近接重視    (通勤-1.6, サービス-0.4, 公園+0.4, 道路接続-10.0, 連結+100.0)")
+    println(" 3) 緑化重視        (通勤-0.6, サービス-0.4, 公園+1.4, 道路接続-8.0, 連結+80.0)")
+    println(" 4) サービス重視    (通勤-0.8, サービス-1.4, 公園+0.4, 道路接続-10.0, 連結+100.0)")
     println(" 5) カスタム設定")
     print("選択 [1–5] (Enter=1): ")
     choice = strip(readline(stdin; keep=true))
@@ -349,16 +349,16 @@ function menu()
 
     if choice == "1"
         CFG.w_commute = -1.0; CFG.w_service = -0.6; CFG.w_park = 0.8
-        CFG.w_road_connect = -5.0; CFG.w_road_network = 20.0; CFG.penalty_disconnect = -100.0
+        CFG.w_road_connect = -10.0; CFG.w_road_network = 100.0; CFG.penalty_disconnect = -1000.0
     elseif choice == "2"
         CFG.w_commute = -1.6; CFG.w_service = -0.4; CFG.w_park = 0.4
-        CFG.w_road_connect = -5.0; CFG.w_road_network = 20.0; CFG.penalty_disconnect = -100.0
+        CFG.w_road_connect = -10.0; CFG.w_road_network = 100.0; CFG.penalty_disconnect = -1000.0
     elseif choice == "3"
         CFG.w_commute = -0.6; CFG.w_service = -0.4; CFG.w_park = 1.4
-        CFG.w_road_connect = -3.0; CFG.w_road_network = 15.0; CFG.penalty_disconnect = -80.0
+        CFG.w_road_connect = -8.0; CFG.w_road_network = 80.0; CFG.penalty_disconnect = -800.0
     elseif choice == "4"
         CFG.w_commute = -0.8; CFG.w_service = -1.4; CFG.w_park = 0.4
-        CFG.w_road_connect = -5.0; CFG.w_road_network = 20.0; CFG.penalty_disconnect = -100.0
+        CFG.w_road_connect = -10.0; CFG.w_road_network = 100.0; CFG.penalty_disconnect = -1000.0
     else
         println("\n--- カスタム重み ---（負=ペナルティ, 正=ボーナス）")
         CFG.w_commute = readnum("通勤距離の重み (負値)", CFG.w_commute)
