@@ -6,7 +6,7 @@ using Random
 using Statistics
 
 # モジュールを読み込み
-include("src/modules.jl")
+include("../src/modules.jl")
 
 @testset "GA City Tests" begin
     
