@@ -1,5 +1,7 @@
 # 🏙️ GA City - 遺伝的アルゴリズムによる都市育成ゲーム
 
+![Julia](https://img.shields.io/badge/-Julia-9558B2?style=for-the-badge&logo=julia&logoColor=white)
+
 遺伝的アルゴリズムを使って最適な都市レイアウトを進化させるJuliaプログラムです。
 
 ## 🎮 概要
