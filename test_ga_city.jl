@@ -5,8 +5,8 @@ using Test
 using Random
 using Statistics
 
-# ga_city.jlを読み込み
-include("ga_city.jl")
+# モジュールを読み込み
+include("modules.jl")
 
 @testset "GA City Tests" begin
     
